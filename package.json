@@ -1,0 +1,32 @@
+{
+  "name": "@pipeworx/mcp-mississippi-code",
+  "version": "0.1.0",
+  "description": "Mississippi Code of 1972 (Annotated) — state statutes by citation, and a",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "bin": {
+    "mcp-mississippi-code": "bin/cli.js"
+  },
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "pipeworx", "mississippi-code"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pipeworx-io/mcp-mississippi-code.git"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "@cloudflare/workers-types": "^4.20260405.1"
+  },
+  "pipeworx": {
+    "sourceHash": "v1-5683efec97ef9c9f9a083dfd745bff888a9760658b28cf8b51a3a47c46019bc9",
+    "sourceCommit": "051ee2039fc96224cb5b7358fd69d525bced13a6"
+  }
+}
