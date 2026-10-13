@@ -927,9 +927,21 @@ function collapse(s: string): string {
  *     catchline-over-a-baked-index shape mcps/north-dakota-code's nd_search
  *     uses for the identical reason — see that pack for the precedent.
  *
+ * LATER-ACTS OVERLAY (fleet #2915, second of the AR/MS/TN overlay builds —
+ * docs/current-statute-routes.md, #2902, after arkansas-code's #2906).
+ * `ms_code_section` carries a `later_acts` field alongside the frozen
+ * snapshot text: every act billstatus.ls.state.ms.us's OWN signed-bill text
+ * shows touching this exact citation since the 2020-07-08 snapshot, dated by
+ * session, linked to the bill, NEVER merged into `text`. Unlike Arkansas,
+ * Mississippi's legislature publishes no ready-made citation->act index, so
+ * this index is home-built by crawling and parsing the signed-bill
+ * boilerplate — see scripts/bake-later-acts.mjs's header for the full
+ * sourcing story, the measured parse rate, and exactly what is and is not
+ * indexed.
+ *
  * Keyless, no signup, no login on either side of the call.
  */
-import type { MsSectionRow } from './ms-index-data.js';
+import type { MsSectionRow, MsLaterActRow } from './ms-index-data.js';
 
 // fleet #2754 pattern (see mcps/north-dakota-code/src/index.ts's own comment
 // for the live incident this guards against): NEVER value-import
@@ -956,6 +968,99 @@ function ensureIndex(args: Record<string, unknown>): void {
   }
   MS_SECTIONS = sections as MsSectionRow[];
   MS_INDEX_CAPTURED_AT = capturedAt;
+}
+
+// LATER-ACTS OVERLAY (fleet #2915, after arkansas-code's fleet #2906 —
+// docs/current-statute-routes.md, #2902). Baked from billstatus.ls.state.
+// ms.us's own signed-bill text by scripts/bake-later-acts.mjs — Mississippi
+// publishes no ready-made citation->act index (unlike Arkansas), so this
+// table is home-built by crawling and regex-parsing the "SECTION N. Section
+// <cite>, Mississippi Code of 1972, is amended/created/repealed/brought
+// forward" boilerplate — see that script's header for the full sourcing
+// story. This is an OVERLAY, never a merge: ms_code_section's `text` field
+// stays the frozen Release 78 (2020-07-08) snapshot; this table only adds a
+// dated, linked list of later acts beside it, explicitly labelled as not
+// merged into that text.
+let MS_LATER_ACTS: MsLaterActRow[] = [];
+let MS_LATER_ACTS_CAPTURED_AT = '';
+let MS_LATER_ACTS_SESSIONS_CHECKED: string[] = [];
+let MS_LATER_ACTS_LOADED = false;
+
+function ensureLaterActs(args: Record<string, unknown>): void {
+  if (MS_LATER_ACTS_LOADED) return;
+  const idx = args._bakedIndex as Record<string, unknown> | null | undefined;
+  const rows = idx?.MS_LATER_ACTS;
+  const capturedAt = idx?.MS_LATER_ACTS_CAPTURED_AT;
+  const sessionsChecked = idx?.MS_LATER_ACTS_SESSIONS_CHECKED;
+  if (
+    !Array.isArray(rows) ||
+    rows.length === 0 ||
+    typeof capturedAt !== 'string' ||
+    !Array.isArray(sessionsChecked) ||
+    sessionsChecked.length === 0
+  ) {
+    // Loud, same shape as ensureIndex() above: a missing/malformed overlay
+    // index is a server-side KV fault, not evidence the section has no later
+    // acts. ms_code_section must not silently claim later_acts: [] when the
+    // real answer is "the index did not load" — those are different
+    // failures and collapsing them would be exactly the silent-empty-array
+    // trap this fleet holds every pack to (docs/silent-zero-policy.md).
+    throw new Error(
+      `mississippi-code: the baked later-acts overlay index is unavailable (${idx == null ? 'not injected' : 'malformed'}). ` +
+        'The gateway loads it from KV on the first call into this pack; this is a server-side fault, not "no later acts" — retry shortly.',
+    );
+  }
+  MS_LATER_ACTS = rows as MsLaterActRow[];
+  MS_LATER_ACTS_CAPTURED_AT = capturedAt;
+  MS_LATER_ACTS_SESSIONS_CHECKED = sessionsChecked as string[];
+  MS_LATER_ACTS_LOADED = true;
+}
+
+interface MsLaterAct {
+  chapter: number | null;
+  session: string;
+  verb: string;
+  range_to: string | null;
+  link: string;
+  bill: string;
+  source: 'billstatus';
+  merged: false;
+}
+
+/** Numeric containment check for a "through" range row: same dash-separated prefix, last segment numerically between the two endpoints. Used only when a row's `to` is non-null. */
+function citationInRange(citation: string, from: string, to: string): boolean {
+  const cParts = citation.split('-');
+  const fParts = from.split('-');
+  const tParts = to.split('-');
+  if (cParts.length !== fParts.length || fParts.length !== tParts.length) return false;
+  for (let i = 0; i < fParts.length - 1; i++) {
+    if (cParts[i] !== fParts[i] || fParts[i] !== tParts[i]) return false;
+  }
+  const lastC = Number(cParts[cParts.length - 1]);
+  const lastF = Number(fParts[fParts.length - 1]);
+  const lastT = Number(tParts[tParts.length - 1]);
+  if (!Number.isFinite(lastC) || !Number.isFinite(lastF) || !Number.isFinite(lastT)) return false;
+  return lastC >= lastF && lastC <= lastT;
+}
+
+function laterActsFor(citation: string): MsLaterAct[] {
+  return MS_LATER_ACTS.filter(([from, to]) => from === citation || (to != null && citationInRange(citation, from, to))).map(
+    ([from, to, verb, , sessionLabel, chapter, bill, link]) => ({
+      chapter,
+      session: sessionLabel,
+      verb,
+      // A row keyed on a "Sections X through Y, ... repealed" clause is kept
+      // as ONE range rather than this script fabricating every citation
+      // between X and Y (some of which may not exist in the real Code) —
+      // range_to names the other end so a caller knows this citation was
+      // swept in by a range, not named individually.
+      range_to: to,
+      link,
+      bill,
+      source: 'billstatus',
+      merged: false,
+    }),
+  );
 }
 
 const UA = 'pipeworx-mcp-mississippi-code/1.0 (+https://pipeworx.io)';
@@ -1203,7 +1308,12 @@ const tools: McpToolExport['tools'] = [
       'reference notes when present — case-law annotations are deliberately excluded (can run to hundreds of ' +
       'entries per section). IMPORTANT: this source is a static public-domain copy current only through ' +
       'Release 78 (2020-07-08) — it will NOT reflect any amendment enacted 2021 or later; check ' +
-      '`current_through` on every response. Keyless.',
+      '`current_through` on every response. Also returns later_acts: a dated, linked overlay of every act this ' +
+      'pack found in Mississippi\'s own signed-bill text touching this exact citation since the 2020-07-08 ' +
+      'snapshot (chapter number, session, bill link) — NOT merged into the text, explicitly labelled so, with ' +
+      'sessions_checked naming every session the overlay covers even when later_acts is empty. Use for "what ' +
+      'does MS 97-3-19 say" or to check a Mississippi statute AND whether it has been amended since 2020-07-08. ' +
+      'Keyless.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1259,6 +1369,7 @@ async function msCodeSection(args: Record<string, unknown>) {
     return { found: false, reason: 'empty_citation', message: 'ms_code_section needs a citation, e.g. "97-3-19" or "Miss. Code Ann. § 89-8-19".' };
   }
   const citation = normalizeCitation(raw);
+  ensureLaterActs(args);
   const title = titleOfCitation(citation);
   if (title === null || !(title in TITLES)) {
     return {
@@ -1287,6 +1398,7 @@ async function msCodeSection(args: Record<string, unknown>) {
 
   const sliced = sliceSection(html, citation);
   if (!sliced) {
+    const laterActsForMissing = laterActsFor(citation);
     return {
       found: false,
       reason: 'citation_not_found',
@@ -1295,12 +1407,18 @@ async function msCodeSection(args: Record<string, unknown>) {
       title_name: TITLES[title],
       message: `No section matches "${raw}" in Title ${title} (${TITLES[title]}) of the Mississippi Code of 1972.`,
       near: nearbyCitations(html, title, 5),
-      hint: 'It may be a chapter heading rather than a section, be numbered differently than expected, or postdate Release 78 (2020-07-08) — this source cannot see anything enacted after that. Call ms_code_chapters with this title to browse.',
+      hint: laterActsForMissing.length
+        ? `This citation does not appear in the Release 78 (2020-07-08) snapshot, but this pack's own overlay of signed-bill text shows ${laterActsForMissing.length} later act(s) touching it — it may be a section CREATED after the snapshot date. See later_acts_if_created below (not merged text, just the bill references).`
+        : 'It may be a chapter heading rather than a section, be numbered differently than expected, or postdate Release 78 (2020-07-08) — this source cannot see anything enacted after that. Call ms_code_chapters with this title to browse.',
+      later_acts_if_created: laterActsForMissing,
+      sessions_checked: MS_LATER_ACTS_SESSIONS_CHECKED,
       source_url: url,
       source: SOURCE_LABEL,
       current_through: CURRENT_THROUGH,
     };
   }
+
+  const laterActs = laterActsFor(citation);
 
   return {
     found: true,
@@ -1314,6 +1432,22 @@ async function msCodeSection(args: Record<string, unknown>) {
     notes: sliced.notesText,
     case_law_annotations_omitted: sliced.truncatedForCaseLaw,
     historical_versions: 'not available — this source publishes only the Release 78 (2020-07-08) text; no prior-version archive is exposed by it.',
+    // OVERLAY (fleet #2915): acts that touched this exact citation AFTER the
+    // 2020-07-08 snapshot, per this pack's own crawl of billstatus.ls.state.
+    // ms.us's signed-bill text (Mississippi publishes no official citation-
+    // to-act index, unlike Arkansas). NOT MERGED into `text` above — the
+    // snapshot text is unchanged by this list; it is only told alongside it.
+    // Empty means the overlay shows no later act for this citation across
+    // every session checked (named in sessions_checked below), not that the
+    // overlay failed — ensureLaterActs() above throws loudly if the index
+    // itself is missing.
+    later_acts: laterActs,
+    later_acts_merged_into_text: false,
+    sessions_checked: MS_LATER_ACTS_SESSIONS_CHECKED,
+    later_acts_data_as_of: MS_LATER_ACTS_CAPTURED_AT,
+    later_acts_note: laterActs.length
+      ? `${laterActs.length} later act(s) found via this pack's own crawl of signed-bill text. These are NOT merged into the text above — the text is still the frozen Release 78 (2020-07-08) snapshot. Open the bill link (link field) for the actual amending language.`
+      : `No later act found for this citation across every session checked since the 2020-07-08 snapshot (${MS_LATER_ACTS_SESSIONS_CHECKED.join('; ')}). This does not guarantee the text is unchanged — only that this pack's own crawl, built from Mississippi's own signed-bill text, found no amending act against this exact citation.`,
     source_url: url,
     source: SOURCE_LABEL,
     current_through: CURRENT_THROUGH,
