@@ -1,6 +1,6 @@
 {
   "name": "@pipeworx/mcp-mississippi-code",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Mississippi Code of 1972 (Annotated) — state statutes by citation, and a chapter list by title. Fleet #2883 (50-state gap: Mississippi was one of four states with no <state>-code pack).",
   "type": "module",
   "main": "src/index.ts",
@@ -26,7 +26,7 @@
     "@cloudflare/workers-types": "^4.20260405.1"
   },
   "pipeworx": {
-    "sourceHash": "v1-34de57735ad8e318cb8c1ba929ba39621949da34acb26f30b4498e796284bfbe",
-    "sourceCommit": "3723e46c6d115bd4a1fd2175e6bf758555e7cb50"
+    "sourceHash": "v1-f7ab4ca3717f8112db0bb2f3650c487493f35a9c93475ce7e5a9c366293286d0",
+    "sourceCommit": "ba9dd6df5992aeb16ef2425ee86d1752c34ca636"
   }
 }
